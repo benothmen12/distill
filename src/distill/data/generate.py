@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,14 +64,112 @@ def _check_reply(reply: Any, must_be_question: bool) -> str:
     return reply.strip()
 
 
-def _build_calls(spec: Spec, message: str, free_text: Any) -> list[ToolCall]:
+ACCENTED = set("éèêëàâçîïôùûüœ")
+FRENCH_WORDS = {
+    "le",
+    "la",
+    "les",
+    "un",
+    "une",
+    "des",
+    "pour",
+    "est",
+    "merci",
+    "svp",
+    "vous",
+    "pouvez",
+    "moi",
+    "avez",
+    "besoin",
+    "faut",
+    "il",
+    "elle",
+    "dans",
+    "sur",
+    "et",
+}
+ENGLISH_WORDS = {
+    "the",
+    "is",
+    "for",
+    "please",
+    "and",
+    "with",
+    "can",
+    "you",
+    "need",
+    "check",
+    "what",
+    "how",
+    "my",
+    "this",
+    "to",
+    "of",
+    "it",
+    "now",
+}
+
+
+def _check_language(message: str, language: str) -> None:
+    """Reject a message written in the other language than its label.
+
+    Accents are a strong French signal; otherwise a clear majority of common
+    words decides. Short messages with no signal pass.
+    """
+    lowered = message.lower()
+    words = set(re.findall(r"\w+", lowered))
+    fr_hits = len(words & FRENCH_WORDS)
+    en_hits = len(words & ENGLISH_WORDS)
+    if language == "en" and (
+        any(c in ACCENTED for c in lowered) or (fr_hits >= 2 and fr_hits > en_hits)
+    ):
+        raise Rejected("language_mismatch", "labelled en, written in French")
+    if language == "fr" and en_hits >= 2 and en_hits > fr_hits:
+        raise Rejected("language_mismatch", "labelled fr, written in English")
+
+
+def _free_text_values(spec: Spec, free_text: Any) -> list[dict]:
+    """One dict of free-text values per call, whatever shape the teacher used.
+
+    The teacher answers either with one object per call (the shape we ask for),
+    or with a flat list of strings in field order, or with a value under the
+    wrong call index. All three are read here. Anything still missing is
+    rejected later by the normal checks, and every value is grounded in the message.
+    """
+    calls = spec.calls
+    per_call: list[dict] = [{} for _ in calls]
     if not isinstance(free_text, list):
-        free_text = []
+        return per_call
+    named: dict[str, str] = {}
+    loose: list[str] = []
+    for index, item in enumerate(free_text):
+        if isinstance(item, dict):
+            if index < len(calls):
+                per_call[index].update(item)
+            named.update({k: v for k, v in item.items() if isinstance(v, str)})
+        elif isinstance(item, str):
+            loose.append(item)
+    slots = [
+        (i, name)
+        for i, call in enumerate(calls)
+        for name in call.free_text
+        if name not in per_call[i]
+    ]
+    for i, name in slots:
+        if name in named:
+            per_call[i][name] = named[name]
+    slots = [(i, name) for i, name in slots if name not in per_call[i]]
+    if loose and len(loose) == len(slots):
+        for (i, name), value in zip(slots, loose, strict=True):
+            per_call[i][name] = value
+    return per_call
+
+
+def _build_calls(spec: Spec, message: str, free_text: Any) -> list[ToolCall]:
+    per_call = _free_text_values(spec, free_text)
     calls: list[ToolCall] = []
     for index, call in enumerate(spec.calls):
-        values = free_text[index] if index < len(free_text) else {}
-        if not isinstance(values, dict):
-            values = {}
+        values = per_call[index]
         arguments = dict(call.fixed)
         for name in call.free_text:
             value = values.get(name)
@@ -104,6 +203,7 @@ def assemble_example(spec: Spec, output: Any, source: str) -> Example:
     if not isinstance(output, dict):
         raise Rejected("no_output")
     message = _check_message(output.get("user_message"))
+    _check_language(message, spec.language)
     common = {
         "id": spec.id,
         "category": spec.category,

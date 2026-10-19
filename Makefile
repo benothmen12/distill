@@ -1,4 +1,4 @@
-.PHONY: install test lint format tools data splits show
+.PHONY: install test lint format tools data splits show eval-teacher compare
 
 install:
 	pip install -e ".[dev]"
@@ -25,3 +25,10 @@ splits:
 
 show:
 	python -m distill.data.show data/processed/test.jsonl --n 5
+
+eval-teacher:
+	python -m distill.eval.run --name teacher --model openai/gpt-oss-120b --limit 200
+	python -m distill.eval.run --name teacher --model openai/gpt-oss-120b --limit 200 --test data/processed/test_noisy.jsonl
+
+compare:
+	python -m distill.eval.compare results/*

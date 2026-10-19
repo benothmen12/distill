@@ -24,6 +24,7 @@ concurrency:
 env:
   N: ${{ github.event.inputs.n || '3000' }}
   DATA_BRANCH: dataset
+  PYTHONUNBUFFERED: "1" # show progress lines live in the log
 
 jobs:
   generate:

@@ -124,27 +124,67 @@ python -m distill.data.build --embeddings   # dedup, splits, noise, stats
 python -m distill.data.show data/processed/test.jsonl --n 5
 ```
 
-## What is measured
+## Evaluation
+
+Every model takes the same exam ([`src/distill/eval/`](src/distill/eval/)): the copilot system prompt, the operator message and the 12 tool definitions, at temperature 0, through any OpenAI-compatible server (Groq for the teacher, vLLM or llama.cpp for the student).
+
+An answer is correct only if it does exactly what the operator asked:
+
+- **Tool calls:** the right tools, each with every argument right. Arguments are parsed with the tool schema before comparing, so `14:00` equals `14:00:00` and an omitted default equals the default written out. Parallel calls can come in any order. Free-text arguments are compared by meaning, so "Vibrations anormales" matches "abnormal vibration" with `--embeddings`.
+- **Clarification:** no tool called, and a question asked. Guessing a machine is a failure.
+- **Out of scope:** no tool called, and a reply given.
+
+Each wrong answer gets one outcome (`wrong_arguments`, `wrong_tool`, `missing_call`, `extra_call`, `invalid_call`, `did_not_call`, `called_instead_of_asking`, `called_out_of_scope`...), and argument accuracy is also reported per field (`schedule_downtime.start_time`...), to see exactly where a model fails.
 
 | Metric | Meaning |
 |---|---|
-| Valid call rate | Output parses and passes the schema |
-| Tool accuracy | Right tool chosen |
-| Argument accuracy | Every argument correct |
-| Abstention accuracy | No tool called when none fits |
-| Robustness | Accuracy on the noisy test set, compared to the clean one |
-| Latency (p50, p95) | Time to a complete tool call |
-| Cost per 1,000 calls | Hardware or API cost |
+| Overall accuracy | Fully correct answers, all categories |
+| Valid call rate | Calls that parse and pass the schema |
+| Tool accuracy | Right tools chosen, or rightly none |
+| Argument accuracy | Every argument right, when the tools are right |
+| Clarification accuracy | Asks instead of guessing |
+| Out-of-scope accuracy | Declines without calling a tool |
+| Robustness | The same metrics on the noisy test set |
+| Latency p50 / p95 | Time to a complete answer |
 
-Results table: *coming with stage 3.*
+```bash
+python -m distill.eval.run --name teacher --model openai/gpt-oss-120b --limit 200
+python -m distill.eval.run --name teacher --model openai/gpt-oss-120b --limit 200 \
+    --test data/processed/test_noisy.jsonl
+python -m distill.eval.compare results/teacher results/qwen3-4b-base results/qwen3-4b-sft
+```
+
+`--limit` takes a subset stratified by category and tool, the same one for the clean and noisy files, so the two scores compare example by example. Runs are resumable, like generation.
+
+**A caveat on the teacher's score:** the teacher wrote the test messages, so the exam uses its own phrasing. Its score is an optimistic reference rather than a neutral one, which makes it a harder bar for the student, not an easier one.
+
+Results table: *coming with the teacher baseline and stage 4.*
+
+## Fine-tuning
+
+[`notebooks/kaggle_train.ipynb`](notebooks/kaggle_train.ipynb) runs the whole stage on a free Kaggle T4: exam before training, QLoRA fine-tuning, exam after training, comparison table, adapter upload.
+
+| Choice | Value | Why |
+|---|---|---|
+| Base model | Qwen3-4B-Instruct-2507 | Apache 2.0, text-only, no thinking mode, tool calling built into its chat template |
+| Method | QLoRA with Unsloth: 4-bit base, LoRA rank 16 on every attention and MLP projection | About 1% of the weights trained, fits in 16 GB |
+| Loss | Answer tokens only | The model learns to answer, not to repeat the prompt |
+| Format | The model's own chat template, with the 12 tools in every prompt | Training and inference see exactly the same text |
+| Schedule | 2 epochs, learning rate 2e-4, cosine, effective batch 16 | |
+
+Before spending GPU time, the notebook prints one rendered example and the exact tokens the loss is computed on. A unit test checks the round trip: what the model learns to write is parsed back by the exam as the expected call ([`test_train_format.py`](tests/test_train_format.py)).
+
+Qwen3.5-4B is newer, but it is a vision-language model: its image encoder would add memory and complexity for nothing here.
 
 ## Roadmap
 
 - [x] Stage 1: tool schemas, validation, CI
 - [x] Stage 2: data pipeline: sampling, generation, validation, deduplication, splits
 - [ ] Stage 2b: generate the full dataset and publish it on the Hugging Face Hub
-- [ ] Stage 3: evaluation harness and teacher baseline
-- [ ] Stage 4: QLoRA fine-tuning
+- [x] Stage 3: evaluation harness
+- [ ] Stage 3b: teacher baseline
+- [x] Stage 4: QLoRA fine-tuning notebook
+- [ ] Stage 4b: run it on Kaggle and publish the results
 - [ ] Stage 5: DPO on failure cases
 - [ ] Stage 6: quantization, serving and benchmarks
 - [ ] Stage 7: public demo and evaluation gate in CI
@@ -167,8 +207,11 @@ distill/
 ├── src/distill/
 │   ├── tools/          # tool schemas, OpenAI export, call validation
 │   ├── data/           # scenario sampling, teacher client, grounding checks, noise, splits
+│   ├── eval/           # run a model with the tools, score every answer, compare models
+│   ├── train/          # training format and QLoRA fine-tuning
 │   ├── embeddings.py   # multilingual embeddings: semantic dedup, leakage, similarity
 │   └── prompts.py      # the copilot system prompt, shared by training and evaluation
+├── notebooks/          # Kaggle notebook for fine-tuning and evaluation on a free GPU
 ├── tests/              # runs offline with a fake teacher
 └── .github/workflows/  # CI on every push, scheduled data generation
 ```

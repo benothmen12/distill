@@ -31,15 +31,25 @@ class FakeTeacher:
         if spec["category"] == "out_of_scope":
             return {
                 "spec_id": spec["spec_id"],
-                "user_message": f"Can you tell me about {spec['topic']}?",
+                "user_message": (
+                    f"Pouvez-vous me parler de {spec['topic']} ?"
+                    if spec.get("language") == "fr"
+                    else f"Can you tell me about {spec['topic']}?"
+                ),
                 "free_text": [],
                 "assistant_reply": "Sorry, I can only help with plant operations.",
             }
         if spec["category"] == "clarify":
-            message = (
-                f"{spec['calls'][0]['action']} Can you do that for me? "
-                f"Asked {spec['now']}, {spec['style']}."
-            )
+            if spec.get("language") == "fr":
+                message = (
+                    "Pouvez-vous le faire, s'il vous plaît ? "
+                    f"Demandé {spec['now']}, {spec['style']}."
+                )
+            else:
+                message = (
+                    f"{spec['calls'][0]['action']} Can you do that for me? "
+                    f"Asked {spec['now']}, {spec['style']}."
+                )
             if self.mistake == "leak_missing":
                 message += " on M-999 and L1 and TCK-00001 and P-0001"
             return {
@@ -55,8 +65,10 @@ class FakeTeacher:
             texts = " ".join(f"{name}: Generated {name} text" for name in call["free_text"])
             parts.append(f"please handle {values} {texts}".strip())
         message = " and ".join(parts)
+        if spec.get("language") == "fr":
+            message = message.replace("please handle", "merci de traiter")
         if self.mistake == "drop_identifiers":
-            message = "please handle it"
+            message = "merci de traiter" if spec.get("language") == "fr" else "please handle it"
         return {
             "spec_id": spec["spec_id"],
             "user_message": message,
@@ -90,3 +102,30 @@ class FakeEmbedder:
                 vectors[row, int.from_bytes(digest[:4], "little") % self.dim] += 1.0
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         return vectors / np.maximum(norms, 1e-9)
+
+
+class OracleModel:
+    """Answers every example perfectly, from its own label."""
+
+    name = "oracle"
+
+    def __init__(self, fail_after: int | None = None) -> None:
+        self.fail_after = fail_after
+        self.calls = 0
+
+    def predict(self, example):
+        from distill.eval.predict import PredictedCall, Prediction, QuotaExhausted
+
+        if self.fail_after is not None and self.calls >= self.fail_after:
+            raise QuotaExhausted("tokens per day")
+        self.calls += 1
+        return Prediction(
+            id=example.id,
+            model=self.name,
+            tool_calls=[
+                PredictedCall(name=c.name, arguments=json.dumps(c.arguments))
+                for c in example.tool_calls
+            ],
+            content=example.assistant_reply,
+            latency_ms=100.0 + self.calls,
+        )

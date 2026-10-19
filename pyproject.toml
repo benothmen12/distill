@@ -21,6 +21,11 @@ dependencies = [
 embeddings = [
     "sentence-transformers>=3.0",
 ]
+train = [  # on a GPU machine, e.g. Kaggle
+    "unsloth",
+    "datasets",
+    "trl",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

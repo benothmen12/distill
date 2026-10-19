@@ -21,6 +21,8 @@ data/generated/
 data/processed/
 checkpoints/
 outputs/
+results/*/
+
 *.safetensors
 *.gguf
 *.bin
