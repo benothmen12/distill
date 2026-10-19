@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Secrets
+.env
+
+# Large artifacts: datasets and model weights live on the Hugging Face Hub, not in git
+data/raw/
+data/generated/
+data/processed/
+checkpoints/
+outputs/
+*.safetensors
+*.gguf
+*.bin

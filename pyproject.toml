@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "distill"
+version = "0.1.0"
+description = "A small open model distilled to call an agent's tools as well as a large one."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Ons Ben Othmen" }]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "openai>=1.50",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+embeddings = [
+    "sentence-transformers>=3.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/distill"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
