@@ -111,7 +111,11 @@ Exact and near duplicates are removed (word 3-gram Jaccard similarity). The test
 
 ### Generating it
 
-Generation runs on Groq's free tier and is resumable: if the daily quota runs out, run the same command the next day and it continues where it stopped.
+Generation runs on Groq's free tier and is resumable: if the daily quota runs out, it stops cleanly and the next run continues where it stopped.
+
+**Automated:** the [`Generate data`](.github/workflows/generate-data.yml) workflow runs this every 6 hours on GitHub Actions, saves progress to the `dataset` branch, and builds the splits once every example is generated. It only needs a `GROQ_API_KEY` repository secret.
+
+**By hand:**
 
 ```bash
 cp .env.example .env            # then add your GROQ_API_KEY
@@ -166,7 +170,7 @@ distill/
 │   ├── embeddings.py   # multilingual embeddings: semantic dedup, leakage, similarity
 │   └── prompts.py      # the copilot system prompt, shared by training and evaluation
 ├── tests/              # runs offline with a fake teacher
-└── .github/workflows/  # lint and tests on every push
+└── .github/workflows/  # CI on every push, scheduled data generation
 ```
 
 ## License

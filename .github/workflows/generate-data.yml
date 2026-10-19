@@ -1,0 +1,93 @@
+name: Generate data
+
+# Runs the resumable data generation on a schedule, on GitHub's servers.
+# Each run continues where the last one stopped and ends cleanly when the free
+# daily quota is reached. Generated data is saved to the `dataset` branch.
+# When every example is generated, the run also builds the train/test splits.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *" # every 6 hours (UTC)
+  workflow_dispatch:
+    inputs:
+      n:
+        description: "Total number of examples to generate"
+        default: "3000"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generate-data
+  cancel-in-progress: false
+
+env:
+  N: ${{ github.event.inputs.n || '3000' }}
+  DATA_BRANCH: dataset
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Get the data generated so far
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$url" "$DATA_BRANCH" > /dev/null; then
+            git clone --depth 1 --branch "$DATA_BRANCH" "$url" data/generated
+          else
+            mkdir -p data/generated
+            git -C data/generated init -b "$DATA_BRANCH"
+            git -C data/generated remote add origin "$url"
+          fi
+
+      - name: Generate (resumes, stops at the daily quota)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python -m distill.data.generate --n "$N"
+
+      - name: Check progress
+        id: progress
+        run: |
+          done=$(cat data/generated/raw.jsonl data/generated/rejected.jsonl 2>/dev/null | wc -l)
+          accepted=$(cat data/generated/raw.jsonl 2>/dev/null | wc -l)
+          echo "done=$done" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Data generation: $done / $N processed"
+            echo ""
+            echo "- Accepted: $accepted"
+            echo "- Rejected: $((done - accepted))"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the splits once everything is generated
+        if: fromJSON(steps.progress.outputs.done) >= fromJSON(env.N) && hashFiles('data/generated/processed/stats.json') == ''
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[embeddings]"
+          python -m distill.data.build --embeddings --out data/generated/processed
+          echo "Splits built: see processed/stats.json on the dataset branch." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save to the dataset branch
+        run: |
+          cd data/generated
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing new to save."
+            exit 0
+          fi
+          git commit -m "Data: ${{ steps.progress.outputs.done }} / ${N} processed"
+          git push origin "$DATA_BRANCH"

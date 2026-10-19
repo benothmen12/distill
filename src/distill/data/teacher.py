@@ -15,6 +15,7 @@ from typing import Any, Protocol
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 MAX_WAIT_SECONDS = 120
+MAX_BAD_JSON = 3
 
 
 class TeacherError(RuntimeError):
@@ -78,6 +79,7 @@ class OpenAICompatibleTeacher:
         import openai
 
         extra_body = {"reasoning_effort": self.reasoning_effort} if self.reasoning_effort else None
+        bad_json = 0
         for attempt in range(self.max_attempts):
             try:
                 response = self._client.chat.completions.create(
@@ -100,6 +102,17 @@ class OpenAICompatibleTeacher:
             except (openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError):
                 time.sleep(min(2**attempt * 5, MAX_WAIT_SECONDS))
                 continue
+            except openai.BadRequestError as exc:
+                # In JSON mode, Groq rejects a reply that is not valid JSON (for example
+                # a bracket left open). The next sample usually is fine, so ask again;
+                # after a few failures, give up on this batch only. Any other 400 is a
+                # configuration error (bad model name, unsupported parameter): stop.
+                if "json_validate_failed" not in str(exc):
+                    raise
+                bad_json += 1
+                if bad_json >= MAX_BAD_JSON:
+                    raise TeacherError(f"invalid JSON {bad_json} times in a row") from exc
+                continue
 
             if response.usage:
                 self.total_tokens += response.usage.total_tokens
@@ -107,7 +120,10 @@ class OpenAICompatibleTeacher:
             try:
                 return json.loads(content)
             except json.JSONDecodeError as exc:
-                raise TeacherError(f"teacher returned invalid JSON: {exc.msg}") from exc
+                bad_json += 1
+                if bad_json >= MAX_BAD_JSON:
+                    raise TeacherError(f"teacher returned invalid JSON: {exc.msg}") from exc
+                continue
 
         raise TeacherError(f"teacher unavailable after {self.max_attempts} attempts")
 
