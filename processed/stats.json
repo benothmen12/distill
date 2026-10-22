@@ -1,0 +1,72 @@
+{
+  "generated": 3000,
+  "accepted": 3000,
+  "rejected": {},
+  "duplicates_removed": {
+    "lexical": 50,
+    "semantic": 0
+  },
+  "moved_to_train_for_leakage": {
+    "lexical": 11,
+    "semantic": 0
+  },
+  "embeddings": null,
+  "train": {
+    "total": 3225,
+    "noisy_copies": 705,
+    "category": {
+      "single": 2075,
+      "parallel": 444,
+      "clarify": 380,
+      "out_of_scope": 326
+    },
+    "language": {
+      "en": 1988,
+      "fr": 1237
+    },
+    "tool": {
+      "get_machine_status": 325,
+      "notify_team": 315,
+      "get_spare_part_stock": 287,
+      "get_production_kpis": 271,
+      "create_maintenance_ticket": 256,
+      "schedule_downtime": 241,
+      "order_spare_part": 237,
+      "search_maintenance_history": 222,
+      "get_sensor_readings": 211,
+      "update_ticket_status": 204,
+      "get_shift_report": 197,
+      "get_failure_risk": 197
+    }
+  },
+  "test": {
+    "total": 430,
+    "category": {
+      "single": 273,
+      "parallel": 60,
+      "clarify": 51,
+      "out_of_scope": 46
+    },
+    "language": {
+      "en": 272,
+      "fr": 158
+    },
+    "tool": {
+      "get_machine_status": 45,
+      "notify_team": 43,
+      "get_production_kpis": 36,
+      "create_maintenance_ticket": 36,
+      "get_spare_part_stock": 35,
+      "order_spare_part": 32,
+      "schedule_downtime": 31,
+      "search_maintenance_history": 29,
+      "get_sensor_readings": 28,
+      "update_ticket_status": 27,
+      "get_shift_report": 26,
+      "get_failure_risk": 25
+    }
+  },
+  "test_noisy": {
+    "total": 430
+  }
+}
