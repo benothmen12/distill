@@ -25,7 +25,7 @@ DEFAULT_BASE_MODEL = "unsloth/Qwen3-4B-Instruct-2507"
 @dataclass
 class SFTSettings:
     base_model: str = DEFAULT_BASE_MODEL
-    max_length: int = 2048
+    max_length: int = 3072  # system prompt + 12 tool schemas alone are ~2300 tokens
     lora_rank: int = 16
     lora_alpha: int = 32
     epochs: float = 2
@@ -40,7 +40,7 @@ class SFTSettings:
     response_part: str = "<|im_start|>assistant\n"
 
 
-def load_model(base_model: str = DEFAULT_BASE_MODEL, max_length: int = 2048) -> tuple[Any, Any]:
+def load_model(base_model: str = DEFAULT_BASE_MODEL, max_length: int = 3072) -> tuple[Any, Any]:
     """Load the base model in 4-bit. Float16 on T4/P100, bfloat16 on newer GPUs."""
     from unsloth import FastLanguageModel
 
